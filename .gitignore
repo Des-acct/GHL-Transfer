@@ -1,0 +1,12 @@
+# Environment secrets
+.env
+
+# Dependencies
+node_modules/
+
+# Exported data (sensitive)
+exports/
+
+# OS files
+.DS_Store
+Thumbs.db

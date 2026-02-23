@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KissHub — GHL Data Transfer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+
+<body>
+
+  <!-- SIGN IN -->
+  <div id="signin-screen">
+    <div class="signin-card">
+      <div class="signin-logo">
+        <div class="logo-wordmark">Kiss<span>Hub</span></div>
+        <div class="logo-tag">Keep It Simple Stupid</div>
+        <div class="logo-badge">SOLUTION</div>
+      </div>
+      <div class="signin-title">Welcome back</div>
+      <div class="signin-sub">Sign in to GHL Data Transfer Console</div>
+      <div class="si-err" id="si-err">Invalid credentials. Use admin@kinetic.com / kinetic123</div>
+      <div class="fg"><label>EMAIL ADDRESS</label><input type="email" id="si-email" value="admin@kinetic.com"
+          placeholder="admin@kinetic.com"></div>
+      <div class="fg"><label>PASSWORD</label><input type="password" id="si-pass" value="kinetic123"
+          placeholder="••••••••"></div>
+      <button class="si-btn" onclick="doSignin()">SIGN IN →</button>
+      <div class="si-hint">Demo: <span>admin@kinetic.com</span> / <span>kinetic123</span></div>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="app">
+    <div class="layout">
+
+      <!-- SIDEBAR -->
+      <nav class="sidebar" id="sidebar">
+        <div class="sb-header">
+          <div class="sb-logo" id="sb-logo">
+            <div class="lw">Kiss<span>Hub</span></div>
+            <div class="lt">Keep It Simple Stupid</div>
+            <div class="lb">SOLUTION</div>
+          </div>
+          <button class="collapse-btn" id="collapseBtn" onclick="toggleSidebar()">◀</button>
+        </div>
+        <div class="sb-section">
+          <div class="sb-sec-label">GHL Transfer</div>
+          <div class="ni active"><span class="ico">🔄</span><span class="lbl">Data Transfer</span></div>
+        </div>
+        <div class="sb-user">
+          <div class="u-av">A</div>
+          <div class="u-info" id="sb-user-info">
+            <div class="u-name">Admin User</div>
+            <div class="u-role">Kinetic Staffing · Admin</div>
+          </div>
+          <button class="logout-btn" onclick="doLogout()">Logout</button>
+        </div>
+      </nav>
+
+      <!-- MAIN -->
+      <div class="main">
+        <div class="topbar">
+          <div>
+            <div class="tb-title">GHL Data Transfer</div>
+            <div class="tb-sub">Kinetic Innovative Staffing Pty Ltd — 16 modules · Expand to pick items</div>
+          </div>
+          <div class="tb-right">
+            <button class="tb-btn-ghost" onclick="resetAll()">↺ Reset All</button>
+            <button class="tb-btn-ghost" onclick="importAll()">⬆ Import All Exported</button>
+            <button class="tb-btn" onclick="exportAll()">⬇ Export All Selected</button>
+          </div>
+        </div>
+
+        <div class="content">
+          <div class="stat-cards">
+            <div class="sc">
+              <div class="sc-top">
+                <div class="sc-icon" style="background:rgba(0,212,255,.12)">📦</div>
+                <div class="sc-label">Total Modules</div>
+              </div>
+              <div class="sc-val">32</div>
+              <div class="sc-sub c-cyan">GHL API V2</div>
+            </div>
+            <div class="sc">
+              <div class="sc-top">
+                <div class="sc-icon" style="background:rgba(249,115,22,.12)">⬇</div>
+                <div class="sc-label">Exported</div>
+              </div>
+              <div class="sc-val" id="sc-exp">0</div>
+              <div class="sc-sub c-cyan" id="sc-exp-s">modules</div>
+            </div>
+            <div class="sc">
+              <div class="sc-top">
+                <div class="sc-icon" style="background:rgba(34,197,94,.12)">⬆</div>
+                <div class="sc-label">Imported</div>
+              </div>
+              <div class="sc-val" id="sc-imp">0</div>
+              <div class="sc-sub c-green" id="sc-imp-s">to new site</div>
+            </div>
+            <div class="sc">
+              <div class="sc-top">
+                <div class="sc-icon" style="background:rgba(239,68,68,.12)">⚠</div>
+                <div class="sc-label">Failed Records</div>
+              </div>
+              <div class="sc-val" id="sc-fail">0</div>
+              <div class="sc-sub c-red">across all modules</div>
+            </div>
+          </div>
+
+          <div class="global-bar">
+            <span class="g-label">Apply range to all</span>
+            <div class="df"><label>From</label><input type="date" id="g-from" value="2024-01-01"></div>
+            <span class="g-sep">→</span>
+            <div class="df"><label>To</label><input type="date" id="g-to"></div>
+            <button class="tb-btn" style="font-size:10px;padding:6px 14px;margin-left:auto"
+              onclick="applyGlobal()">APPLY TO ALL</button>
+          </div>
+
+          <div class="table-wrap">
+            <div class="tw-head">
+              <div>
+                <div class="tw-title">Module Transfer Console</div>
+                <div class="tw-sub">Click ▸ to expand a module and select which items to export</div>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:220px">Module</th>
+                  <th style="width:80px">Category</th>
+                  <th style="width:250px">Date Range</th>
+                  <th class="c" style="width:130px">Actions</th>
+                  <th style="width:155px">Export Status</th>
+                  <th style="width:155px">Import Status</th>
+                </tr>
+              </thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="summary">
+            <div class="sum-stat">
+              <div class="val" id="s-done">0 / 32</div>
+              <div class="lbl">Modules Complete</div>
+            </div>
+            <div class="sum-div"></div>
+            <div class="sum-stat">
+              <div class="val" id="s-ok" style="color:var(--green)">0</div>
+              <div class="lbl">Records OK</div>
+            </div>
+            <div class="sum-stat">
+              <div class="val" id="s-err" style="color:var(--amber)">0</div>
+              <div class="lbl">With Errors</div>
+            </div>
+            <div class="sum-stat">
+              <div class="val" id="s-fail" style="color:var(--red)">0</div>
+              <div class="lbl">Failed</div>
+            </div>
+            <div class="sum-actions">
+              <button class="tb-btn-ghost" style="font-size:11px" onclick="resetAll()">↺ Reset All</button>
+              <button class="tb-btn" style="font-size:11px" onclick="exportAll()">⬇ Export All Modules</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL -->
+  <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="m-head">
+        <div class="m-title" id="m-title">Records</div>
+        <button class="m-close" onclick="closeModalDirect()">×</button>
+      </div>
+      <div class="m-tabs" id="m-tabs"></div>
+      <div class="m-filter" id="m-filter"></div>
+      <div class="m-body" id="m-body"></div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toastStack"></div>
+
+  <script src="/app.js"></script>
+</body>
+
+</html>

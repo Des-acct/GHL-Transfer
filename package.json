@@ -1,0 +1,27 @@
+{
+  "name": "ghl-integration",
+  "version": "1.0.0",
+  "description": "GoHighLevel API V2 Integration — Manual Trigger Layer for data extraction",
+  "main": "trigger.js",
+  "type": "module",
+  "scripts": {
+    "trigger": "node trigger.js",
+    "serve": "node server.js",
+    "trigger:dry-run": "node trigger.js --dry-run",
+    "trigger:modules": "node trigger.js --modules"
+  },
+  "keywords": [
+    "ghl",
+    "gohighlevel",
+    "api",
+    "integration"
+  ],
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1"
+  }
+}
