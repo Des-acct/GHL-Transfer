@@ -22,22 +22,26 @@ const REQUIRED_VARS = ['GHL_API_TOKEN', 'GHL_LOCATION_ID'];
 
 const missing = REQUIRED_VARS.filter((key) => !process.env[key]);
 if (missing.length > 0) {
-  console.error(
-    `\n❌  Missing required environment variables:\n` +
-    missing.map((k) => `   • ${k}`).join('\n') +
-    `\n\n   Copy .env.example → .env and fill in your values.\n`
-  );
-  process.exit(1);
+  const msg = `Missing required environment variables: ${missing.join(', ')}. Set them in Vercel dashboard → Settings → Environment Variables.`;
+  console.error(`\n❌  ${msg}\n`);
+  // Don't process.exit() — it kills Vercel serverless functions
+  // throw so the import fails gracefully with a clear message
+  if (process.env.VERCEL) {
+    // On Vercel, let the app start but config will have empty values
+    console.error('Running on Vercel without env vars — API calls will fail with clear errors.');
+  } else {
+    process.exit(1);
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Frozen config object
 // ---------------------------------------------------------------------------
 const config = Object.freeze({
-  apiToken:    process.env.GHL_API_TOKEN,
-  locationId:  process.env.GHL_LOCATION_ID,
-  baseUrl:     process.env.GHL_API_BASE_URL || 'https://services.leadconnectorhq.com',
-  apiVersion:  '2021-07-28',
+  apiToken: process.env.GHL_API_TOKEN,
+  locationId: process.env.GHL_LOCATION_ID,
+  baseUrl: process.env.GHL_API_BASE_URL || 'https://services.leadconnectorhq.com',
+  apiVersion: '2021-07-28',
 });
 
 export default config;

@@ -11,7 +11,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
-const EXPORT_DIR = resolve(__dirname, 'exports');
+const IS_VERCEL = !!process.env.VERCEL;
+const EXPORT_DIR = IS_VERCEL ? '/tmp/exports' : resolve(__dirname, 'exports');
 
 app.use(cors());
 app.use(express.json());
@@ -219,9 +220,15 @@ app.get('/api/manifest', (req, res) => {
 
 app.get('/', (req, res) => res.sendFile(resolve(__dirname, 'public', 'index.html')));
 
-app.listen(PORT, () => {
-    console.log(`\n  ⚡ KissHub GHL Data Transfer Console`);
-    console.log(`  🌐 http://localhost:${PORT}`);
-    console.log(`  📡 Location: ${config.locationId}`);
-    console.log(`  📁 Exports: ${EXPORT_DIR}\n`);
-});
+// Vercel: export the app as a serverless function
+export default app;
+
+// Local: listen on PORT
+if (!IS_VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`\n  ⚡ KissHub GHL Data Transfer Console`);
+        console.log(`  🌐 http://localhost:${PORT}`);
+        console.log(`  📡 Location: ${config.locationId}`);
+        console.log(`  📁 Exports: ${EXPORT_DIR}\n`);
+    });
+}
