@@ -84,8 +84,8 @@ app.get('/api/filters/:moduleId', async (req, res) => {
                 items = (r.calendars || []).map(c => ({ id: c.id, label: c.name })); break;
             }
             case 'workflows': {
-                const r = await ghlFetchAll('/workflows/', { locationId: loc }, { dataKey: 'workflows', limit: 100 });
-                items = r.map(w => ({ id: w.id, label: w.name, group: w.folder || 'Default' })); break;
+                const r = await ghlFetch('/workflows/', { locationId: loc });
+                items = (r.workflows || []).map(w => ({ id: w.id, label: w.name, group: w.folder || 'Default' })); break;
             }
             case 'forms': {
                 const r = await ghlFetch('/forms/', { locationId: loc });
@@ -155,7 +155,7 @@ async function extractModule(moduleId, selectedFilters) {
             }
             return all;
         }
-        case 'workflows': return await ghlFetchAll('/workflows/', { locationId: loc }, { dataKey: 'workflows', limit: 100 });
+        case 'workflows': { const r = await ghlFetch('/workflows/', { locationId: loc }); return r.workflows || []; }
         case 'forms': { const r = await ghlFetch('/forms/', { locationId: loc }); return r.forms || []; }
         case 'surveys':
             try { const r = await ghlFetch('/surveys/', { locationId: loc }); return r.surveys || []; }
