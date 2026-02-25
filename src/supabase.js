@@ -75,7 +75,8 @@ export async function getManifestFromSupabase(locationId) {
     const { data, error } = await supabase
         .from('ghl_exports')
         .select('module_id, record_count, exported_at')
-        .eq('location_id', locationId);
+        .eq('location_id', locationId)
+        .order('exported_at', { ascending: true });
     if (error) return null;
     const manifest = {};
     (data || []).forEach(row => {
