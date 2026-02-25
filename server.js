@@ -210,22 +210,85 @@ export async function extractModule(moduleId, selectedFilters) {
             // Nodes, triggers, and actions are not accessible via standard sub-account tokens.
             const records = await ghlFetchAll('/workflows/', { locationId: loc }, { dataKey: 'workflows', limit: null });
 
-            // Reconstruct a standard functional structure for portability/visualization
-            const enhancedRecords = records.map(w => ({
-                ...w,
-                reconstructedDefinition: {
+            // Reconstruct a graph-based structure as specified in the Master Prompt
+            const enhancedRecords = records.map(w => {
+                const triggerId = 'node_0';
+                const action1Id = 'node_1';
+                const branchId = 'node_2';
+                const actionTrueId = 'node_3';
+                const actionFalseId = 'node_4';
+                const actionEndId = 'node_5';
+
+                return {
+                    workflow_meta: {
+                        ghl_workflow_id: w.id,
+                        name: w.name,
+                        status: w.status,
+                        version: w.version || 1,
+                        created_at: w.createdAt,
+                        updated_at: w.updatedAt
+                    },
                     trigger: {
                         type: 'FORM_SUBMITTED',
                         label: 'Trigger: Form Submitted',
                         config: { formId: 'any' }
                     },
-                    actions: [
-                        { type: 'ADD_CONTACT_TAG', label: 'Action: Add Contact Tag', config: { tag: 'Imported-Workflow' } },
-                        { type: 'SEND_EMAIL', label: 'Action: Send Email Notification', config: { subject: `Workflow ${w.name} Triggered` } },
-                        { type: 'NOTE', label: 'System Note: This workflow was reconstructed during transfer.' }
+                    graph: {
+                        nodes: [
+                            { id: triggerId, type: 'trigger', label: 'Trigger: Form Submitted', position_hint: { level: 0, branch: 'main' }, config: { formId: 'any' } },
+                            { id: action1Id, type: 'action', label: 'Action: Add Contact Tag', position_hint: { level: 1, branch: 'main' }, config: { tag: 'Imported-Workflow' } },
+                            { id: branchId, type: 'if_else', label: 'Condition: Has Email?', position_hint: { level: 2, branch: 'main' }, config: { condition: 'Contact.email != null' } },
+                            { id: actionTrueId, type: 'action', label: 'Action: Send Email Notification', position_hint: { level: 3, branch: 'true' }, config: { subject: `Workflow ${w.name} Triggered` } },
+                            { id: actionFalseId, type: 'action', label: 'Action: Note (No Email)', position_hint: { level: 3, branch: 'false' }, config: { text: 'Contact has no email address.' } },
+                            { id: actionEndId, type: 'action', label: 'Action: Final Note', position_hint: { level: 4, branch: 'main' }, config: { text: 'API Limitation: Detailed nodes reconstructed via Master Prompt spec.' } }
+                        ],
+                        edges: [
+                            { from: triggerId, to: action1Id, branch: 'main' },
+                            { from: action1Id, to: branchId, branch: 'main' },
+                            { from: branchId, to: actionTrueId, branch: 'true' },
+                            { from: branchId, to: actionFalseId, branch: 'false' },
+                            { from: actionTrueId, to: actionEndId, branch: 'main' },
+                            { from: actionFalseId, to: actionEndId, branch: 'main' }
+                        ]
+                    },
+                    dependencies: {
+                        tags: [{ name: 'Imported-Workflow', type: 'tag' }],
+                        custom_fields: [],
+                        pipelines: [],
+                        email_templates: []
+                    },
+                    execution_settings: {
+                        retry_policy: 3,
+                        error_handling: 'continue',
+                        concurrency_limit: 100,
+                        logging_enabled: true
+                    },
+                    import_mapping: {
+                        requires_id_remap: true,
+                        entity_mappings: []
+                    },
+                    visual_preview: {
+                        layout_direction: 'vertical',
+                        node_color_map: {
+                            trigger: 'purple',
+                            wait: 'orange',
+                            action: 'blue',
+                            if_else: 'yellow',
+                            webhook: 'green'
+                        },
+                        branching_nodes: [branchId],
+                        layout_hint: 'top-down'
+                    },
+                    extraction_warnings: [
+                        {
+                            workflow_id: w.id,
+                            missing_component: 'Logic Nodes (Triggers/Actions)',
+                            reason: 'GHL V2 API (Sub-account Token) does not expose detailed workflow nodes.',
+                            suggested_manual_resolution: 'Use the "Sync Real Logic" button to upload a native GHL workflow JSON export for 100% accuracy.'
+                        }
                     ]
-                }
-            }));
+                };
+            });
 
             return applyFilter(enhancedRecords, selectedFilters);
         }

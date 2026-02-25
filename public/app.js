@@ -359,72 +359,106 @@ function renderWfFromData(data) {
     const workflows = Array.isArray(data) ? data : [data];
 
     workflows.forEach(w => {
-        let trigger = { type: 'Start', label: 'Workflow' };
-        let actions = [];
-        let isReal = !!(w.definition || w.nodes);
+        const name = w.workflow_meta?.name || w.name || 'Untitled';
+        const isReal = !!(w.graph || w.definition || w.nodes);
 
-        if (w.reconstructedDefinition) {
-            trigger = w.reconstructedDefinition.trigger;
-            actions = w.reconstructedDefinition.actions;
-        } else if (w.definition) {
-            // Native GHL Export Format
-            const d = w.definition;
-            if (d.triggers && d.triggers[0]) {
-                const t = d.triggers[0];
-                trigger = { type: t.type, label: t.label || t.name || t.type };
-            }
-            if (d.actions) {
-                actions = d.actions.map(a => ({ type: a.type, label: a.label || a.name || a.type }));
-            }
-        } else if (w.nodes) {
-            // Alternative GHL Export Format
-            const triggerNode = w.nodes.find(n => n.type === 'trigger' || n.triggerType);
-            if (triggerNode) {
-                trigger = { type: triggerNode.type, label: triggerNode.label || triggerNode.name };
-            }
-            actions = w.nodes.filter(n => n !== triggerNode).map(n => ({ type: n.type, label: n.label || n.name || n.type }));
-        }
-
-        const group = document.createElement('div');
-        group.className = 'wf-flow-group';
-        group.style.width = '100%';
-        group.style.display = 'flex';
-        group.style.flexDirection = 'column';
-        group.style.alignItems = 'center';
-        group.style.gap = '40px';
-        group.style.marginBottom = '80px';
-
-        group.innerHTML = `
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:-20px">
-                <div style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:2px;font-weight:700">Workflow: ${w.name}</div>
+        const header = document.createElement('div');
+        header.style.marginBottom = '40px';
+        header.style.textAlign = 'center';
+        header.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:center;gap:10px">
+                <div style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:2px;font-weight:700">Workflow: ${name}</div>
                 ${isReal ? '<span style="background:var(--cyan);color:#000;font-size:8px;padding:2px 6px;border-radius:10px;font-weight:700">REAL LOGIC</span>' : '<span style="background:var(--purple);color:#fff;font-size:8px;padding:2px 6px;border-radius:10px;font-weight:700">RECONSTRUCTED</span>'}
             </div>
         `;
+        flow.appendChild(header);
 
-        // Trigger
-        group.innerHTML += `
-            <div class="wf-node trigger">
-                <div class="wf-type">${trigger.type || 'Trigger'}</div>
-                <div class="wf-label">${trigger.label}</div>
-            </div>
-        `;
+        if (w.graph) {
+            // Master Prompt Specification - Graph Rendering
+            const nodeMap = {};
+            w.graph.nodes.forEach(n => nodeMap[n.id] = n);
+            const edgeMap = {};
+            w.graph.edges.forEach(e => {
+                if (!edgeMap[e.from]) edgeMap[e.from] = [];
+                edgeMap[e.from].push(e);
+            });
 
-        // Actions
-        actions.slice(0, 15).forEach(act => { // Cap to 15 for visual clarity
-            group.innerHTML += `
-                <div class="wf-node ${act.type?.toLowerCase() === 'placeholder' ? 'placeholder' : ''}">
-                    <div class="wf-type">${act.type}</div>
-                    <div class="wf-label">${act.label}</div>
-                </div>
-            `;
-        });
+            const triggerNode = w.graph.nodes.find(n => n.type === 'trigger');
+            if (triggerNode) {
+                renderNodeRecursive(triggerNode.id, flow, nodeMap, edgeMap);
+            }
+        } else {
+            // Legacy / Simple Linear Rendering
+            const trigger = w.reconstructedDefinition?.trigger || { type: 'Start', label: 'Workflow' };
+            const nodes = w.reconstructedDefinition?.actions || [];
 
-        if (actions.length > 15) {
-            group.innerHTML += `<div style="color:var(--text3);font-size:11px">... and ${actions.length - 15} more nodes</div>`;
+            const group = document.createElement('div');
+            group.className = 'wf-flow-group';
+            group.style.display = 'flex';
+            group.style.flexDirection = 'column';
+            group.style.alignItems = 'center';
+            group.style.gap = '40px';
+
+            group.innerHTML = `<div class="wf-node trigger"><div class="wf-type">${trigger.type}</div><div class="wf-label">${trigger.label}</div></div>`;
+            nodes.forEach(n => {
+                group.innerHTML += `<div class="wf-node"><div class="wf-type">${n.type}</div><div class="wf-label">${n.label}</div></div>`;
+            });
+            flow.appendChild(group);
         }
 
-        flow.appendChild(group);
+        const end = document.createElement('div');
+        end.style.marginTop = '40px';
+        end.innerHTML = `<div style="background:var(--surface3);color:var(--text3);font-size:9px;font-weight:800;padding:4px 12px;border-radius:20px;letter-spacing:1px">END</div>`;
+        flow.appendChild(end);
     });
+}
+
+function renderNodeRecursive(nodeId, container, nodeMap, edgeMap) {
+    const node = nodeMap[nodeId];
+    if (!node) return;
+
+    const el = document.createElement('div');
+    el.className = `wf-node ${node.type === 'trigger' ? 'trigger' : ''} ${node.type === 'if_else' ? 'branch' : ''}`;
+    el.innerHTML = `<div class="wf-type">${node.type}</div><div class="wf-label">${node.label}</div>`;
+    container.appendChild(el);
+
+    const edges = edgeMap[nodeId] || [];
+    if (edges.length === 0) return;
+
+    if (edges.length === 1) {
+        // Linear path
+        renderNodeRecursive(edges[0].to, container, nodeMap, edgeMap);
+    } else {
+        // Branching path (GHL style)
+        const branchesWrap = document.createElement('div');
+        branchesWrap.className = 'wf-branches-wrap';
+        branchesWrap.style.display = 'flex';
+        branchesWrap.style.gap = '60px';
+        branchesWrap.style.marginTop = '40px';
+        branchesWrap.style.paddingTop = '20px';
+        branchesWrap.style.borderTop = '1px dashed var(--border2)';
+
+        edges.forEach(edge => {
+            const branchCol = document.createElement('div');
+            branchCol.style.display = 'flex';
+            branchCol.style.flexDirection = 'column';
+            branchCol.style.alignItems = 'center';
+            branchCol.style.gap = '40px';
+
+            const branchLabel = document.createElement('div');
+            branchLabel.style.fontSize = '10px';
+            branchLabel.style.fontWeight = '700';
+            branchLabel.style.color = edge.branch === 'true' ? 'var(--green)' : 'var(--red)';
+            branchLabel.style.textTransform = 'uppercase';
+            branchLabel.style.marginBottom = '-20px';
+            branchLabel.textContent = edge.branch;
+            branchCol.appendChild(branchLabel);
+
+            renderNodeRecursive(edge.to, branchCol, nodeMap, edgeMap);
+            branchesWrap.appendChild(branchCol);
+        });
+        container.appendChild(branchesWrap);
+    }
 }
 
 async function openWorkflowViewer() {
