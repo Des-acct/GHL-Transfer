@@ -2,7 +2,7 @@ const API = '';
 const CAT_COLORS = { 'CRM': '#00d4ff', 'Messaging': '#8b5cf6', 'Calendar': '#22c55e', 'Automation': '#f59e0b', 'Sites': '#3b82f6', 'Settings': '#64748b', 'Analytics': '#6366f1' };
 
 const MODULES = [
-    { id: 'contacts', n: 'Contacts', icon: '👥', cat: 'CRM', bg: 'rgba(0,212,255,.1)', dd: false },
+    { id: 'contacts', n: 'Contacts', icon: '👥', cat: 'CRM', bg: 'rgba(0,212,255,.1)', dd: true },
     { id: 'opportunities', n: 'Opportunities', icon: '🎯', cat: 'CRM', bg: 'rgba(0,212,255,.1)', dd: true },
     { id: 'pipelines', n: 'Pipelines', icon: '🔗', cat: 'CRM', bg: 'rgba(0,212,255,.1)', dd: true },
     { id: 'tasks', n: 'Tasks', icon: '✅', cat: 'CRM', bg: 'rgba(0,212,255,.1)', dd: true },

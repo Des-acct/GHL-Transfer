@@ -61,6 +61,10 @@ app.get('/api/filters/:moduleId', async (req, res) => {
                     (p.stages || []).forEach(s => items.push({ id: `stage:${p.id}:${s.id}`, label: s.name, group: `${p.name} — Stages` }));
                 }); break;
             }
+            case 'contacts': {
+                const r = await ghlFetchAll('/contacts/', { locationId: loc }, { dataKey: 'contacts', limit: 50 });
+                items = (r || []).map(c => ({ id: c.id, label: `${c.firstName || ''} ${c.lastName || ''} (${c.email || 'no email'})`.trim() })); break;
+            }
             case 'pipelines': {
                 const r = await ghlFetch('/opportunities/pipelines', { locationId: loc });
                 items = (r.pipelines || []).map(p => ({ id: p.id, label: p.name })); break;
@@ -123,10 +127,22 @@ function applyFilter(data, selectedFilters) {
     return data.filter(item => selectedFilters.includes(item.id));
 }
 
-async function extractModule(moduleId, selectedFilters) {
+export async function extractModule(moduleId, selectedFilters) {
     const loc = config.locationId;
     switch (moduleId) {
-        case 'contacts': return await ghlFetchAll('/contacts/', { locationId: loc }, { dataKey: 'contacts', limit: 100 });
+        case 'contacts': {
+            if (selectedFilters?.length) {
+                const results = [];
+                for (const id of selectedFilters) {
+                    try {
+                        const r = await ghlFetch(`/contacts/${id}`);
+                        if (r.contact) results.push(r.contact);
+                    } catch { }
+                }
+                return results;
+            }
+            return await ghlFetchAll('/contacts/', { locationId: loc }, { dataKey: 'contacts', limit: 100 });
+        }
         case 'opportunities': {
             const pRes = await ghlFetch('/opportunities/pipelines', { locationId: loc });
             const pipelines = pRes.pipelines || [];
