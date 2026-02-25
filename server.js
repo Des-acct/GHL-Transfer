@@ -22,7 +22,7 @@ mkdirSync(EXPORT_DIR, { recursive: true });
 
 const ALL_MODULES = ['contacts', 'opportunities', 'pipelines', 'tasks', 'tags', 'custom_fields', 'custom_values', 'conversations', 'email_templates', 'calendars', 'appointments', 'workflows', 'forms', 'surveys', 'media', 'reporting'];
 
-async function saveExport(moduleId, data) {
+async function saveExport(moduleId, data, description) {
     const count = Array.isArray(data) ? data.length : (data.opportunities?.length ?? Object.keys(data).length);
     // Save to local filesystem
     try {
@@ -31,12 +31,12 @@ async function saveExport(moduleId, data) {
         const mp = resolve(EXPORT_DIR, '_manifest.json');
         let manifest = {};
         if (existsSync(mp)) try { manifest = JSON.parse(readFileSync(mp, 'utf-8')); } catch { }
-        manifest[moduleId] = { count, exportedAt: new Date().toISOString() };
+        manifest[moduleId] = { count, exportedAt: new Date().toISOString(), description };
         writeFileSync(mp, JSON.stringify(manifest, null, 2), 'utf-8');
     } catch (e) { console.log('   ⚠  Filesystem save skipped:', e.message); }
     // Save to Supabase
     try {
-        await saveToSupabase(moduleId, data, config.locationId);
+        await saveToSupabase(moduleId, data, config.locationId, description);
     } catch (e) { console.log('   ⚠  Supabase save skipped:', e.message); }
     return { count };
 }
@@ -224,7 +224,22 @@ export async function extractModule(moduleId, selectedFilters) {
 app.post('/api/export/:moduleId', async (req, res) => {
     try {
         const data = await extractModule(req.params.moduleId, req.body?.selectedFilters);
-        const { count } = await saveExport(req.params.moduleId, data);
+
+        // Derive record description (e.g. "Contact: John Doe")
+        let description = req.params.moduleId;
+        if (Array.isArray(data) && data.length > 0) {
+            const first = data[0];
+            const name = first.name || first.label || first.firstName || first.title || first.subject || first.id;
+            description = `${req.params.moduleId}: ${name}${data.length > 1 ? ` (+${data.length - 1} more)` : ''}`;
+        } else if (data && typeof data === 'object' && !Array.isArray(data)) {
+            // Special cases like opportunities/reporting that might return objects
+            if (data.opportunities?.length) {
+                const first = data.opportunities[0];
+                description = `Opportunities: ${first.name || first.contactName}${data.opportunities.length > 1 ? ` (+${data.opportunities.length - 1} more)` : ''}`;
+            }
+        }
+
+        const { count } = await saveExport(req.params.moduleId, data, description);
         res.json({ success: true, moduleId: req.params.moduleId, count, data: Array.isArray(data) ? data.slice(0, 200) : data, exportedAt: new Date().toISOString(), sessionRequests: getSessionRequestCount() });
     } catch (err) {
         res.status(500).json({ success: false, moduleId: req.params.moduleId, error: err.message, sessionRequests: getSessionRequestCount() });

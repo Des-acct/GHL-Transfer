@@ -27,20 +27,21 @@ if (SUPABASE_URL && SUPABASE_KEY) {
 }
 
 /**
- * Save export data to Supabase (upsert by module_id + location_id).
+ * Save export data to Supabase (insert new row every time).
  */
-export async function saveToSupabase(moduleId, data, locationId) {
+export async function saveToSupabase(moduleId, data, locationId, description) {
     if (!supabase) return null;
     const count = Array.isArray(data) ? data.length : Object.keys(data).length;
     const { data: result, error } = await supabase
         .from('ghl_exports')
-        .upsert({
+        .insert({
             module_id: moduleId,
             location_id: locationId,
+            description: description || moduleId,
             data: data,
             record_count: count,
             exported_at: new Date().toISOString(),
-        }, { onConflict: 'module_id,location_id' })
+        })
         .select();
     if (error) {
         console.error(`   ❌  Supabase save failed for ${moduleId}:`, error.message);
