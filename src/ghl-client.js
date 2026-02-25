@@ -107,7 +107,7 @@ export async function ghlFetch(path, params = {}, options = {}) {
  * @param {number} [opts.maxPages=100] — Safety cap on number of pages
  * @returns {Promise<object[]>} All records across pages
  */
-export async function ghlFetchAll(path, params = {}, { dataKey, limit = 100, maxPages = 100 } = {}) {
+export async function ghlFetchAll(path, params = {}, { dataKey, limit, maxPages = 100 } = {}) {
     const allRecords = [];
     let page = 0;
     let cursor = undefined;
@@ -115,7 +115,8 @@ export async function ghlFetchAll(path, params = {}, { dataKey, limit = 100, max
 
     while (hasMore && page < maxPages) {
         page++;
-        const queryParams = { ...params, limit: String(limit) };
+        const queryParams = { ...params };
+        if (limit) queryParams.limit = String(limit);
 
         // Cursor-based pagination
         if (cursor) {

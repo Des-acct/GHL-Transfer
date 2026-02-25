@@ -208,7 +208,7 @@ export async function extractModule(moduleId, selectedFilters) {
         case 'workflows': {
             // NOTE: GHL V2 API currently only exposes metadata for workflows.
             // Nodes, triggers, and actions are not accessible via standard sub-account tokens.
-            const records = await ghlFetchAll('/workflows/', { locationId: loc }, { dataKey: 'workflows' });
+            const records = await ghlFetchAll('/workflows/', { locationId: loc }, { dataKey: 'workflows', limit: null });
 
             // Reconstruct a standard functional structure for portability/visualization
             const enhancedRecords = records.map(w => ({
