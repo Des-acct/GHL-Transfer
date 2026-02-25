@@ -53,16 +53,17 @@ export async function saveToSupabase(moduleId, data, locationId, description) {
 /**
  * Read export data from Supabase.
  */
-export async function readFromSupabase(moduleId, locationId) {
+export async function readFromSupabase(moduleId, locationId, id = null) {
     if (!supabase) return null;
-    const { data, error } = await supabase
-        .from('ghl_exports')
-        .select('*')
-        .eq('module_id', moduleId)
-        .eq('location_id', locationId)
-        .single();
-    if (error && error.code !== 'PGRST116') { // PGRST116 = no rows
-        console.error(`   ❌  Supabase read failed for ${moduleId}:`, error.message);
+    let query = supabase.from('ghl_exports').select('*');
+    if (id) {
+        query = query.eq('id', id);
+    } else {
+        query = query.eq('module_id', moduleId).eq('location_id', locationId).order('exported_at', { ascending: false }).limit(1);
+    }
+    const { data, error } = await query.single();
+    if (error && error.code !== 'PGRST116') {
+        console.error(`   ❌  Supabase read failed:`, error.message);
     }
     return data || null;
 }
@@ -101,6 +102,23 @@ export async function getExportHistory(moduleId, locationId) {
         throw error;
     }
     return data || [];
+}
+
+/**
+ * Update the logic data of an existing export record.
+ */
+export async function updateExportLogic(id, realData) {
+    if (!supabase) return null;
+    const { data, error } = await supabase
+        .from('ghl_exports')
+        .update({ data: realData })
+        .eq('id', id)
+        .select();
+    if (error) {
+        console.error(`   ❌  Supabase update failed for ${id}:`, error.message);
+        throw error;
+    }
+    return data;
 }
 
 export { supabase };

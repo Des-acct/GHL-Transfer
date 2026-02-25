@@ -290,25 +290,63 @@ async function fetchWorkflowExports() {
 
         body.innerHTML = r.exports.map(exp => {
             const date = new Date(exp.exported_at).toLocaleString();
+            const isReal = !!(exp.data?.definition || exp.data?.nodes);
             return `
                 <tr class="mod-row">
                     <td style="padding:14px 20px">
-                        <div style="font-weight:600;color:var(--text)">${exp.description}</div>
-                        <div style="font-size:10px;color:var(--text3)">ID: ${exp.id}</div>
+                        <div style="display:flex;align-items:center;gap:10px">
+                            <div style="font-weight:600;color:var(--text)">${exp.description}</div>
+                            ${isReal ? '<span style="background:var(--cyan);color:#000;font-size:8px;padding:2px 6px;border-radius:10px;font-weight:700">REAL LOGIC</span>' : ''}
+                        </div>
+                        <div style="font-size:10px;color:var(--text3)">Ref: ${exp.id.slice(0, 8)}...</div>
                     </td>
                     <td style="padding:14px 20px">${exp.record_count} workflows</td>
                     <td style="padding:14px 20px;color:var(--text2)">${date}</td>
                     <td style="padding:14px 20px">
                         <button class="tb-btn" style="font-size:10px;padding:5px 12px;background:var(--purple);color:#fff" onclick='renderWfFromData(${JSON.stringify(exp.data)})'>👁 View Logic Tree</button>
+                        <button class="tb-btn" style="font-size:10px;padding:5px 12px;background:var(--cyan);color:#000;margin-left:5px" onclick="triggerWfSync('${exp.id}')">🔄 Sync Real Logic</button>
                     </td>
                     <td style="padding:14px 20px">
-                        <a href="/api/download/workflows" class="dp-link" style="color:var(--cyan)">Download JSON</a>
+                        <a href="/api/export-data/workflows?exportId=${exp.id}" target="_blank" class="dp-link" style="color:var(--cyan)">Download JSON</a>
                     </td>
                 </tr>
             `;
         }).join('');
     } catch (e) {
         body.innerHTML = `<tr><td colspan="5" style="padding:40px;text-align:center;color:var(--red)">Error: ${e.message}</td></tr>`;
+    }
+}
+
+let syncExportId = null;
+function triggerWfSync(id) {
+    syncExportId = id;
+    document.getElementById('wfSyncInput').click();
+}
+
+async function handleWfSync(event) {
+    const file = event.target.files[0];
+    if (!file || !syncExportId) return;
+
+    try {
+        const text = await file.text();
+        const realData = JSON.parse(text);
+
+        const res = await fetch(`${API}/api/sync-workflow-logic/${syncExportId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ realData })
+        }).then(r => r.json());
+
+        if (res.success) {
+            alert('Workflow logic synced successfully! Refreshing list...');
+            fetchWorkflowExports();
+        } else {
+            alert('Sync failed: ' + res.error);
+        }
+    } catch (e) {
+        alert('Invalid JSON file: ' + e.message);
+    } finally {
+        event.target.value = ''; // Reset input
     }
 }
 
@@ -321,7 +359,32 @@ function renderWfFromData(data) {
     const workflows = Array.isArray(data) ? data : [data];
 
     workflows.forEach(w => {
-        const def = w.reconstructedDefinition || { trigger: { label: 'Start' }, actions: [] };
+        let trigger = { type: 'Start', label: 'Workflow' };
+        let actions = [];
+        let isReal = !!(w.definition || w.nodes);
+
+        if (w.reconstructedDefinition) {
+            trigger = w.reconstructedDefinition.trigger;
+            actions = w.reconstructedDefinition.actions;
+        } else if (w.definition) {
+            // Native GHL Export Format
+            const d = w.definition;
+            if (d.triggers && d.triggers[0]) {
+                const t = d.triggers[0];
+                trigger = { type: t.type, label: t.label || t.name || t.type };
+            }
+            if (d.actions) {
+                actions = d.actions.map(a => ({ type: a.type, label: a.label || a.name || a.type }));
+            }
+        } else if (w.nodes) {
+            // Alternative GHL Export Format
+            const triggerNode = w.nodes.find(n => n.type === 'trigger' || n.triggerType);
+            if (triggerNode) {
+                trigger = { type: triggerNode.type, label: triggerNode.label || triggerNode.name };
+            }
+            actions = w.nodes.filter(n => n !== triggerNode).map(n => ({ type: n.type, label: n.label || n.name || n.type }));
+        }
+
         const group = document.createElement('div');
         group.className = 'wf-flow-group';
         group.style.width = '100%';
@@ -330,25 +393,36 @@ function renderWfFromData(data) {
         group.style.alignItems = 'center';
         group.style.gap = '40px';
         group.style.marginBottom = '80px';
-        group.innerHTML = `<div style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:2px;font-weight:700;margin-bottom:-20px">Workflow: ${w.name}</div>`;
+
+        group.innerHTML = `
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:-20px">
+                <div style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:2px;font-weight:700">Workflow: ${w.name}</div>
+                ${isReal ? '<span style="background:var(--cyan);color:#000;font-size:8px;padding:2px 6px;border-radius:10px;font-weight:700">REAL LOGIC</span>' : '<span style="background:var(--purple);color:#fff;font-size:8px;padding:2px 6px;border-radius:10px;font-weight:700">RECONSTRUCTED</span>'}
+            </div>
+        `;
 
         // Trigger
         group.innerHTML += `
             <div class="wf-node trigger">
-                <div class="wf-type">${def.trigger.type || 'Trigger'}</div>
-                <div class="wf-label">${def.trigger.label}</div>
+                <div class="wf-type">${trigger.type || 'Trigger'}</div>
+                <div class="wf-label">${trigger.label}</div>
             </div>
         `;
 
         // Actions
-        def.actions.forEach(act => {
+        actions.slice(0, 15).forEach(act => { // Cap to 15 for visual clarity
             group.innerHTML += `
-                <div class="wf-node ${act.type.toLowerCase() === 'placeholder' ? 'placeholder' : ''}">
+                <div class="wf-node ${act.type?.toLowerCase() === 'placeholder' ? 'placeholder' : ''}">
                     <div class="wf-type">${act.type}</div>
                     <div class="wf-label">${act.label}</div>
                 </div>
             `;
         });
+
+        if (actions.length > 15) {
+            group.innerHTML += `<div style="color:var(--text3);font-size:11px">... and ${actions.length - 15} more nodes</div>`;
+        }
+
         flow.appendChild(group);
     });
 }

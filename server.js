@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'fs';
 import config from './src/config.js';
 import { ghlFetch, ghlFetchAll, testConnection } from './src/ghl-client.js';
 import { getSessionRequestCount } from './src/rate-limiter.js';
-import { saveToSupabase, readFromSupabase, getManifestFromSupabase, getExportHistory } from './src/supabase.js';
+import { saveToSupabase, readFromSupabase, getManifestFromSupabase, getExportHistory, updateExportLogic } from './src/supabase.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -317,17 +317,31 @@ app.get('/api/exports-list/:moduleId', async (req, res) => {
     }
 });
 
+// ── SYNC WORKFLOW LOGIC (Manual Upload) ──
+app.post('/api/sync-workflow-logic/:exportId', async (req, res) => {
+    try {
+        const { realData } = req.body;
+        if (!realData) throw new Error('No data provided');
+        await updateExportLogic(req.params.exportId, realData);
+        res.json({ success: true, message: 'Workflow logic synced successfully.' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // ── DATA & DOWNLOAD ──
 app.get('/api/export-data/:moduleId', async (req, res) => {
-    // Try Supabase first, fall back to filesystem
+    // Try Supabase first (allows specific ID query)
     try {
-        const sbData = await readFromSupabase(req.params.moduleId, config.locationId);
+        const { exportId } = req.query; // Optional ID for historical lookup
+        const sbData = await readFromSupabase(req.params.moduleId, config.locationId, exportId);
         if (sbData) {
             const d = sbData.data;
             const count = Array.isArray(d) ? d.length : Object.keys(d).length;
-            return res.json({ success: true, data: Array.isArray(d) ? d.slice(0, 200) : d, count, source: 'supabase' });
+            // Return full data for specific export, or sliced for manifest preview
+            return res.json({ success: true, data: d, count, source: 'supabase', id: sbData.id });
         }
-    } catch { }
+    } catch (e) { console.log('   ⚠  Supabase lookup failed:', e.message); }
     // Filesystem fallback
     const fp = resolve(EXPORT_DIR, `${req.params.moduleId}.json`);
     if (!existsSync(fp)) return res.json({ success: false, data: null });
