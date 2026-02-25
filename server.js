@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'fs';
 import config from './src/config.js';
 import { ghlFetch, ghlFetchAll, testConnection } from './src/ghl-client.js';
 import { getSessionRequestCount } from './src/rate-limiter.js';
+import { saveToSupabase, readFromSupabase, getManifestFromSupabase } from './src/supabase.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -21,16 +22,23 @@ mkdirSync(EXPORT_DIR, { recursive: true });
 
 const ALL_MODULES = ['contacts', 'opportunities', 'pipelines', 'tasks', 'tags', 'custom_fields', 'custom_values', 'conversations', 'email_templates', 'calendars', 'appointments', 'workflows', 'forms', 'surveys', 'media', 'reporting'];
 
-function saveExport(moduleId, data) {
-    const fp = resolve(EXPORT_DIR, `${moduleId}.json`);
-    writeFileSync(fp, JSON.stringify(data, null, 2), 'utf-8');
-    const mp = resolve(EXPORT_DIR, '_manifest.json');
-    let manifest = {};
-    if (existsSync(mp)) try { manifest = JSON.parse(readFileSync(mp, 'utf-8')); } catch { }
+async function saveExport(moduleId, data) {
     const count = Array.isArray(data) ? data.length : (data.opportunities?.length ?? Object.keys(data).length);
-    manifest[moduleId] = { count, exportedAt: new Date().toISOString() };
-    writeFileSync(mp, JSON.stringify(manifest, null, 2), 'utf-8');
-    return { filePath: fp, count };
+    // Save to local filesystem
+    try {
+        const fp = resolve(EXPORT_DIR, `${moduleId}.json`);
+        writeFileSync(fp, JSON.stringify(data, null, 2), 'utf-8');
+        const mp = resolve(EXPORT_DIR, '_manifest.json');
+        let manifest = {};
+        if (existsSync(mp)) try { manifest = JSON.parse(readFileSync(mp, 'utf-8')); } catch { }
+        manifest[moduleId] = { count, exportedAt: new Date().toISOString() };
+        writeFileSync(mp, JSON.stringify(manifest, null, 2), 'utf-8');
+    } catch (e) { console.log('   ⚠  Filesystem save skipped:', e.message); }
+    // Save to Supabase
+    try {
+        await saveToSupabase(moduleId, data, config.locationId);
+    } catch (e) { console.log('   ⚠  Supabase save skipped:', e.message); }
+    return { count };
 }
 
 app.get('/api/test-connection', async (req, res) => {
@@ -109,6 +117,12 @@ app.get('/api/filters/:moduleId', async (req, res) => {
 });
 
 // ── EXTRACT MODULE ──
+// Filter helper: only return items whose id matches the selected checkboxes
+function applyFilter(data, selectedFilters) {
+    if (!selectedFilters?.length || !Array.isArray(data)) return data;
+    return data.filter(item => selectedFilters.includes(item.id));
+}
+
 async function extractModule(moduleId, selectedFilters) {
     const loc = config.locationId;
     switch (moduleId) {
@@ -116,34 +130,54 @@ async function extractModule(moduleId, selectedFilters) {
         case 'opportunities': {
             const pRes = await ghlFetch('/opportunities/pipelines', { locationId: loc });
             const pipelines = pRes.pipelines || [];
+            // If filters selected, only fetch matching pipelines/stages
+            const wantedPipelines = selectedFilters?.filter(f => f.startsWith('pipeline:')).map(f => f.split(':')[1]) || [];
+            const wantedStages = selectedFilters?.filter(f => f.startsWith('stage:')).map(f => { const parts = f.split(':'); return { pipelineId: parts[1], stageId: parts[2] }; }) || [];
             let allOpps = [];
             for (const p of pipelines) {
+                if (wantedPipelines.length && !wantedPipelines.includes(p.id)) continue;
                 try {
                     const opps = await ghlFetchAll('/opportunities/search', { location_id: loc, pipeline_id: p.id }, { dataKey: 'opportunities', limit: 100 });
-                    allOpps.push(...opps.map(o => ({ ...o, pipelineName: p.name })));
+                    let filtered = opps.map(o => ({ ...o, pipelineName: p.name }));
+                    if (wantedStages.length) {
+                        const stageIds = wantedStages.filter(s => s.pipelineId === p.id).map(s => s.stageId);
+                        if (stageIds.length) filtered = filtered.filter(o => stageIds.includes(o.pipelineStageId));
+                    }
+                    allOpps.push(...filtered);
                 } catch { }
             }
-            return { pipelines, opportunities: allOpps };
+            return { pipelines: wantedPipelines.length ? pipelines.filter(p => wantedPipelines.includes(p.id)) : pipelines, opportunities: allOpps };
         }
         case 'pipelines': {
             const r = await ghlFetch('/opportunities/pipelines', { locationId: loc });
-            return r.pipelines || [];
+            return applyFilter(r.pipelines || [], selectedFilters);
         }
         case 'tasks':
-            try { return await ghlFetchAll('/contacts/tasks', { locationId: loc }, { dataKey: 'tasks', limit: 100 }); }
+            try {
+                let tasks = await ghlFetchAll('/contacts/tasks', { locationId: loc }, { dataKey: 'tasks', limit: 100 });
+                if (selectedFilters?.length) {
+                    tasks = tasks.filter(t => {
+                        const isCompleted = t.status === 'completed' || t.completed;
+                        if (selectedFilters.includes('completed') && isCompleted) return true;
+                        if (selectedFilters.includes('pending') && !isCompleted) return true;
+                        return false;
+                    });
+                }
+                return tasks;
+            }
             catch { return []; }
-        case 'tags': { const r = await ghlFetch(`/locations/${loc}/tags`); return r.tags || []; }
-        case 'custom_fields': { const r = await ghlFetch(`/locations/${loc}/customFields`); return r.customFields || []; }
-        case 'custom_values': { const r = await ghlFetch(`/locations/${loc}/customValues`); return r.customValues || []; }
+        case 'tags': { const r = await ghlFetch(`/locations/${loc}/tags`); return applyFilter(r.tags || [], selectedFilters); }
+        case 'custom_fields': { const r = await ghlFetch(`/locations/${loc}/customFields`); return applyFilter(r.customFields || [], selectedFilters); }
+        case 'custom_values': { const r = await ghlFetch(`/locations/${loc}/customValues`); return applyFilter(r.customValues || [], selectedFilters); }
         case 'conversations': {
             let data = await ghlFetchAll('/conversations/search', { locationId: loc }, { dataKey: 'conversations', limit: 100 });
             if (selectedFilters?.length) data = data.filter(c => selectedFilters.includes(c.type));
             return data;
         }
         case 'email_templates':
-            try { const r = await ghlFetch('/emails/templates', { locationId: loc }); return r.templates || r.data || []; }
+            try { const r = await ghlFetch('/emails/templates', { locationId: loc }); return applyFilter(r.templates || r.data || [], selectedFilters); }
             catch { return []; }
-        case 'calendars': { const r = await ghlFetch('/calendars/', { locationId: loc }); return r.calendars || []; }
+        case 'calendars': { const r = await ghlFetch('/calendars/', { locationId: loc }); return applyFilter(r.calendars || [], selectedFilters); }
         case 'appointments': {
             const cRes = await ghlFetch('/calendars/', { locationId: loc });
             let all = [];
@@ -155,10 +189,10 @@ async function extractModule(moduleId, selectedFilters) {
             }
             return all;
         }
-        case 'workflows': { const r = await ghlFetch('/workflows/', { locationId: loc }); return r.workflows || []; }
-        case 'forms': { const r = await ghlFetch('/forms/', { locationId: loc }); return r.forms || []; }
+        case 'workflows': { const r = await ghlFetch('/workflows/', { locationId: loc }); return applyFilter(r.workflows || [], selectedFilters); }
+        case 'forms': { const r = await ghlFetch('/forms/', { locationId: loc }); return applyFilter(r.forms || [], selectedFilters); }
         case 'surveys':
-            try { const r = await ghlFetch('/surveys/', { locationId: loc }); return r.surveys || []; }
+            try { const r = await ghlFetch('/surveys/', { locationId: loc }); return applyFilter(r.surveys || [], selectedFilters); }
             catch { return []; }
         case 'media':
             try { const r = await ghlFetch('/medias/', { locationId: loc }); return r.medias || r.data || []; }
@@ -174,7 +208,7 @@ async function extractModule(moduleId, selectedFilters) {
 app.post('/api/export/:moduleId', async (req, res) => {
     try {
         const data = await extractModule(req.params.moduleId, req.body?.selectedFilters);
-        const { filePath, count } = saveExport(req.params.moduleId, data);
+        const { count } = await saveExport(req.params.moduleId, data);
         res.json({ success: true, moduleId: req.params.moduleId, count, data: Array.isArray(data) ? data.slice(0, 200) : data, exportedAt: new Date().toISOString(), sessionRequests: getSessionRequestCount() });
     } catch (err) {
         res.status(500).json({ success: false, moduleId: req.params.moduleId, error: err.message, sessionRequests: getSessionRequestCount() });
@@ -196,23 +230,49 @@ app.post('/api/export-all', async (req, res) => {
 });
 
 // ── DATA & DOWNLOAD ──
-app.get('/api/export-data/:moduleId', (req, res) => {
+app.get('/api/export-data/:moduleId', async (req, res) => {
+    // Try Supabase first, fall back to filesystem
+    try {
+        const sbData = await readFromSupabase(req.params.moduleId, config.locationId);
+        if (sbData) {
+            const d = sbData.data;
+            const count = Array.isArray(d) ? d.length : Object.keys(d).length;
+            return res.json({ success: true, data: Array.isArray(d) ? d.slice(0, 200) : d, count, source: 'supabase' });
+        }
+    } catch { }
+    // Filesystem fallback
     const fp = resolve(EXPORT_DIR, `${req.params.moduleId}.json`);
     if (!existsSync(fp)) return res.json({ success: false, data: null });
     try {
         const data = JSON.parse(readFileSync(fp, 'utf-8'));
         const count = Array.isArray(data) ? data.length : Object.keys(data).length;
-        res.json({ success: true, data: Array.isArray(data) ? data.slice(0, 200) : data, count });
+        res.json({ success: true, data: Array.isArray(data) ? data.slice(0, 200) : data, count, source: 'filesystem' });
     } catch { res.json({ success: false, data: null }); }
 });
 
-app.get('/api/download/:moduleId', (req, res) => {
+app.get('/api/download/:moduleId', async (req, res) => {
+    // Try Supabase first
+    try {
+        const sbData = await readFromSupabase(req.params.moduleId, config.locationId);
+        if (sbData) {
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Content-Disposition', `attachment; filename="${req.params.moduleId}.json"`);
+            return res.send(JSON.stringify(sbData.data, null, 2));
+        }
+    } catch { }
+    // Filesystem fallback
     const fp = resolve(EXPORT_DIR, `${req.params.moduleId}.json`);
     if (!existsSync(fp)) return res.status(404).json({ error: 'Not exported yet' });
     res.download(fp, `${req.params.moduleId}.json`);
 });
 
-app.get('/api/manifest', (req, res) => {
+app.get('/api/manifest', async (req, res) => {
+    // Try Supabase first
+    try {
+        const sbManifest = await getManifestFromSupabase(config.locationId);
+        if (sbManifest && Object.keys(sbManifest).length) return res.json(sbManifest);
+    } catch { }
+    // Filesystem fallback
     const mp = resolve(EXPORT_DIR, '_manifest.json');
     if (!existsSync(mp)) return res.json({});
     try { res.json(JSON.parse(readFileSync(mp, 'utf-8'))); } catch { res.json({}); }
