@@ -205,7 +205,26 @@ export async function extractModule(moduleId, selectedFilters) {
             }
             return all;
         }
-        case 'workflows': { const r = await ghlFetch('/workflows/', { locationId: loc }); return applyFilter(r.workflows || [], selectedFilters); }
+        case 'workflows': {
+            // NOTE: GHL V2 API currently only exposes metadata for workflows.
+            // Nodes, triggers, and actions are not accessible via standard sub-account tokens.
+            const records = await ghlFetchAll('/workflows/', { locationId: loc }, { dataKey: 'workflows' });
+
+            // Reconstruct a standard structure for portability/visualization
+            const enhancedRecords = records.map(w => ({
+                ...w,
+                reconstructedDefinition: {
+                    trigger: { type: 'Default Trigger', label: 'Workflow Started' },
+                    actions: [
+                        { type: 'Info', label: `Status: ${w.status || 'Active'}` },
+                        { type: 'Info', label: `Version: ${w.version || 1}` },
+                        { type: 'Placeholder', label: 'Nodes hidden by API V2 — Manual setup required' }
+                    ]
+                }
+            }));
+
+            return applyFilter(enhancedRecords, selectedFilters);
+        }
         case 'forms': { const r = await ghlFetch('/forms/', { locationId: loc }); return applyFilter(r.forms || [], selectedFilters); }
         case 'surveys':
             try { const r = await ghlFetch('/surveys/', { locationId: loc }); return applyFilter(r.surveys || [], selectedFilters); }

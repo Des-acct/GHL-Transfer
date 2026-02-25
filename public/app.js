@@ -148,8 +148,10 @@ function applyGlobal() {
 function setExportStatus(id, phase) {
     const s = S[id], el = document.getElementById('exst-' + id);
     if (phase === 'running') el.innerHTML = `<div class="status-mini"><div class="st-row"><span class="s-dot d-run"></span><span class="s-cnt" style="color:var(--orange)">…</span><span class="s-lbl">Exporting</span></div></div>`;
-    else if (phase === 'done') el.innerHTML = `<div class="status-mini"><div class="st-row click" onclick="openModal('${id}')"><span class="s-dot d-ok"></span><span class="s-cnt">${s.exportCount.toLocaleString()}</span><span class="s-lbl">Exported</span></div><div style="margin-top:4px"><a href="/api/download/${id}" style="font-size:9px;color:var(--cyan);text-decoration:none">⬇ Download JSON</a></div><div class="prog"><div class="prog-f pf-g" style="width:100%"></div></div></div>`;
-    else if (phase === 'failed') el.innerHTML = `<div class="status-mini"><div class="st-row"><span class="s-dot d-fail"></span><span class="s-cnt" style="color:var(--red)">✕</span><span class="s-lbl">Failed</span></div><div style="font-size:9px;color:var(--red);margin-top:3px;line-height:1.3;max-width:140px;word-break:break-word">${s.error || 'Unknown error'}</div></div>`;
+    else if (phase === 'done') {
+        const visualBtn = id === 'workflows' ? `<div style="margin-top:4px"><button onclick="openWorkflowViewer()" style="background:var(--cyan);color:#000;border:none;border-radius:4px;padding:3px 8px;font-size:9px;font-weight:700;cursor:pointer">👁 Open Visualizer</button></div>` : '';
+        el.innerHTML = `<div class="status-mini"><div class="st-row click" onclick="openModal('${id}')"><span class="s-dot d-ok"></span><span class="s-cnt">${s.exportCount.toLocaleString()}</span><span class="s-lbl">Exported</span></div><div style="margin-top:4px"><a href="/api/download/${id}" style="font-size:9px;color:var(--cyan);text-decoration:none">⬇ Download JSON</a></div>${visualBtn}<div class="prog"><div class="prog-f pf-g" style="width:100%"></div></div></div>`;
+    } else if (phase === 'failed') el.innerHTML = `<div class="status-mini"><div class="st-row"><span class="s-dot d-fail"></span><span class="s-cnt" style="color:var(--red)">✕</span><span class="s-lbl">Failed</span></div><div style="font-size:9px;color:var(--red);margin-top:3px;line-height:1.3;max-width:140px;word-break:break-word">${s.error || 'Unknown error'}</div></div>`;
 }
 function setImportStatus(id, phase) {
     const el = document.getElementById('imst-' + id);
@@ -244,6 +246,66 @@ async function renderModal(id) {
             return `<div class="rec-item"><div class="rec-av av-ok">${String(name).slice(0, 2).toUpperCase()}</div><div><div class="rec-name">${name}</div><div class="rec-meta">${meta || m.n}</div><span class="rec-tag t-ok">✓ EXPORTED</span></div></div>`;
         }).join('');
     } catch (e) { body.innerHTML = `<div class="modal-empty">Error: ${e.message}</div>`; }
+}
+
+// ── WORKFLOW VISUALIZER ──
+function openWfModal(e) { if (e.target === document.getElementById('wfModalOverlay')) closeWfModalDirect(); }
+function closeWfModalDirect() { document.getElementById('wfModalOverlay').classList.remove('open'); }
+function closeWfModal(e) { if (e.target === document.getElementById('wfModalOverlay')) closeWfModalDirect(); }
+
+async function openWorkflowViewer() {
+    const overlay = document.getElementById('wfModalOverlay');
+    const flow = document.getElementById('wf-flow');
+    overlay.classList.add('open');
+    flow.innerHTML = '<div class="modal-empty">Loading workflow structure…</div>';
+
+    try {
+        const r = await fetch(API + '/api/export-data/workflows').then(x => x.json());
+        if (!r.success || !r.data || !r.data.length) {
+            flow.innerHTML = '<div class="modal-empty">No workflow data exported yet.</div>';
+            return;
+        }
+
+        // Show the first exported workflow as a representative sample or the full list
+        // For simplicity, we'll show a "Workflow List" if multiple, or the structure if specific items selected
+        const workflows = r.data;
+        flow.innerHTML = '';
+
+        workflows.forEach(w => {
+            const def = w.reconstructedDefinition || { trigger: { label: 'Start' }, actions: [] };
+
+            const group = document.createElement('div');
+            group.style.width = '100%';
+            group.style.display = 'flex';
+            group.style.flexDirection = 'column';
+            group.style.alignItems = 'center';
+            group.style.gap = '40px';
+            group.style.marginBottom = '80px';
+            group.innerHTML = `<div style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:2px;font-weight:700;margin-bottom:-20px">Workflow: ${w.name}</div>`;
+
+            // Trigger
+            group.innerHTML += `
+                <div class="wf-node trigger">
+                    <div class="wf-type">${def.trigger.type || 'Trigger'}</div>
+                    <div class="wf-label">${def.trigger.label}</div>
+                </div>
+            `;
+
+            // Actions
+            def.actions.forEach(act => {
+                group.innerHTML += `
+                    <div class="wf-node ${act.type.toLowerCase() === 'placeholder' ? 'placeholder' : ''}">
+                        <div class="wf-type">${act.type}</div>
+                        <div class="wf-label">${act.label}</div>
+                    </div>
+                `;
+            });
+            flow.appendChild(group);
+        });
+
+    } catch (e) {
+        flow.innerHTML = `<div class="modal-empty">Error visualizing workflow: ${e.message}</div>`;
+    }
 }
 
 // ── TOAST ──

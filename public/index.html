@@ -181,6 +181,19 @@
     </div>
   </div>
 
+  <!-- WORKFLOW VISUALIZER MODAL -->
+  <div class="modal-overlay" id="wfModalOverlay" onclick="closeWfModal(event)">
+    <div class="modal modal-lg" onclick="event.stopPropagation()">
+      <div class="m-head">
+        <div class="m-title" id="wf-title">Workflow Visualizer</div>
+        <button class="m-close" onclick="closeWfModalDirect()">×</button>
+      </div>
+      <div class="m-body wf-viz-body" id="wf-body">
+        <div class="wf-flow" id="wf-flow"></div>
+      </div>
+    </div>
+  </div>
+
   <div class="toast-stack" id="toastStack"></div>
 
   <script src="/app.js"></script>
