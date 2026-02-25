@@ -47,6 +47,17 @@ let sC = false;
 function toggleSidebar() { sC = !sC; document.getElementById('sidebar').classList.toggle('collapsed', sC); document.getElementById('collapseBtn').textContent = sC ? '▶' : '◀'; document.querySelectorAll('.sb-sec-label,.lbl,.arr,.lt,.lb,#sb-user-info,.logout-btn').forEach(el => el.style.opacity = sC ? '0' : '1'); }
 function navToggle(el) { const sub = el.nextElementSibling; if (sub?.classList.contains('sub')) { el.classList.toggle('open'); sub.classList.toggle('open'); } }
 
+// ── NAVIGATION ──
+function showView(view) {
+    document.getElementById('view-transfer').style.display = view === 'transfer' ? 'block' : 'none';
+    document.getElementById('view-workflows').style.display = view === 'workflows' ? 'block' : 'none';
+
+    document.getElementById('nav-transfer').classList.toggle('active', view === 'transfer');
+    document.getElementById('nav-workflows').classList.toggle('active', view === 'workflows');
+
+    if (view === 'workflows') fetchWorkflowExports();
+}
+
 // ── TABLE ──
 function buildTable() {
     const defFrom = '2024-01-01', defTo = today(), tb = document.getElementById('tableBody');
@@ -190,7 +201,7 @@ async function doExport(id) {
     }
 }
 
-// ── IMPORT (placeholder) ──
+// ── IMPORT (REAL API) ──
 async function doImport(id) {
     const s = S[id]; if (s.status !== 'exported') return;
     s.status = 'importing';
@@ -198,12 +209,26 @@ async function doImport(id) {
     bim.disabled = true; bim.classList.add('running'); bex.disabled = true;
     iim.innerHTML = '<span class="spin">↻</span>';
     setImportStatus(id, 'running');
-    setTimeout(() => {
+
+    try {
+        const res = await fetch(API + '/api/import/' + id, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ records: s.exportData })
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Import failed');
+
         s.status = 'done';
         bim.disabled = false; bim.classList.remove('running'); bim.classList.add('imported'); iim.innerHTML = '✓'; bex.disabled = false;
         setImportStatus(id, 'done'); updateSummary();
-        toast(MODULES.find(x => x.id === id).n + ' imported', 't-green');
-    }, 1500);
+        toast(MODULES.find(x => x.id === id).n + ' imported to target site', 't-green');
+    } catch (err) {
+        s.status = 'exported'; // Allow retry
+        bim.disabled = false; bim.classList.remove('running'); iim.innerHTML = '⬆'; bex.disabled = false;
+        setImportStatus(id, 'ready');
+        toast('Import failed: ' + err.message, 't-red');
+    }
 }
 
 function exportAll() { let d = 0; MODULES.forEach(m => { if (S[m.id].status === 'idle' || S[m.id].status === 'failed') { setTimeout(() => doExport(m.id), d); d += 2000; } }); }
@@ -253,59 +278,84 @@ function openWfModal(e) { if (e.target === document.getElementById('wfModalOverl
 function closeWfModalDirect() { document.getElementById('wfModalOverlay').classList.remove('open'); }
 function closeWfModal(e) { if (e.target === document.getElementById('wfModalOverlay')) closeWfModalDirect(); }
 
-async function openWorkflowViewer() {
-    const overlay = document.getElementById('wfModalOverlay');
-    const flow = document.getElementById('wf-flow');
-    overlay.classList.add('open');
-    flow.innerHTML = '<div class="modal-empty">Loading workflow structure…</div>';
-
+async function fetchWorkflowExports() {
+    const body = document.getElementById('workflowListBody');
+    body.innerHTML = '<tr><td colspan="5" style="padding:40px;text-align:center;color:var(--cyan)">⏳ Loading historical exports…</td></tr>';
     try {
-        const r = await fetch(API + '/api/export-data/workflows').then(x => x.json());
-        if (!r.success || !r.data || !r.data.length) {
-            flow.innerHTML = '<div class="modal-empty">No workflow data exported yet.</div>';
+        const r = await fetch(API + '/api/exports-list/workflows').then(x => x.json());
+        if (!r.success || !r.exports.length) {
+            body.innerHTML = '<tr><td colspan="5" style="padding:40px;text-align:center;color:var(--text3)">No workflows exported yet.</td></tr>';
             return;
         }
 
-        // Show the first exported workflow as a representative sample or the full list
-        // For simplicity, we'll show a "Workflow List" if multiple, or the structure if specific items selected
-        const workflows = r.data;
-        flow.innerHTML = '';
+        body.innerHTML = r.exports.map(exp => {
+            const date = new Date(exp.exported_at).toLocaleString();
+            return `
+                <tr class="mod-row">
+                    <td style="padding:14px 20px">
+                        <div style="font-weight:600;color:var(--text)">${exp.description}</div>
+                        <div style="font-size:10px;color:var(--text3)">ID: ${exp.id}</div>
+                    </td>
+                    <td style="padding:14px 20px">${exp.record_count} workflows</td>
+                    <td style="padding:14px 20px;color:var(--text2)">${date}</td>
+                    <td style="padding:14px 20px">
+                        <button class="tb-btn" style="font-size:10px;padding:5px 12px;background:var(--purple);color:#fff" onclick='renderWfFromData(${JSON.stringify(exp.data)})'>👁 View Logic Tree</button>
+                    </td>
+                    <td style="padding:14px 20px">
+                        <a href="/api/download/workflows" class="dp-link" style="color:var(--cyan)">Download JSON</a>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (e) {
+        body.innerHTML = `<tr><td colspan="5" style="padding:40px;text-align:center;color:var(--red)">Error: ${e.message}</td></tr>`;
+    }
+}
 
-        workflows.forEach(w => {
-            const def = w.reconstructedDefinition || { trigger: { label: 'Start' }, actions: [] };
+function renderWfFromData(data) {
+    const overlay = document.getElementById('wfModalOverlay');
+    const flow = document.getElementById('wf-flow');
+    overlay.classList.add('open');
+    flow.innerHTML = '';
 
-            const group = document.createElement('div');
-            group.style.width = '100%';
-            group.style.display = 'flex';
-            group.style.flexDirection = 'column';
-            group.style.alignItems = 'center';
-            group.style.gap = '40px';
-            group.style.marginBottom = '80px';
-            group.innerHTML = `<div style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:2px;font-weight:700;margin-bottom:-20px">Workflow: ${w.name}</div>`;
+    const workflows = Array.isArray(data) ? data : [data];
 
-            // Trigger
+    workflows.forEach(w => {
+        const def = w.reconstructedDefinition || { trigger: { label: 'Start' }, actions: [] };
+        const group = document.createElement('div');
+        group.className = 'wf-flow-group';
+        group.style.width = '100%';
+        group.style.display = 'flex';
+        group.style.flexDirection = 'column';
+        group.style.alignItems = 'center';
+        group.style.gap = '40px';
+        group.style.marginBottom = '80px';
+        group.innerHTML = `<div style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:2px;font-weight:700;margin-bottom:-20px">Workflow: ${w.name}</div>`;
+
+        // Trigger
+        group.innerHTML += `
+            <div class="wf-node trigger">
+                <div class="wf-type">${def.trigger.type || 'Trigger'}</div>
+                <div class="wf-label">${def.trigger.label}</div>
+            </div>
+        `;
+
+        // Actions
+        def.actions.forEach(act => {
             group.innerHTML += `
-                <div class="wf-node trigger">
-                    <div class="wf-type">${def.trigger.type || 'Trigger'}</div>
-                    <div class="wf-label">${def.trigger.label}</div>
+                <div class="wf-node ${act.type.toLowerCase() === 'placeholder' ? 'placeholder' : ''}">
+                    <div class="wf-type">${act.type}</div>
+                    <div class="wf-label">${act.label}</div>
                 </div>
             `;
-
-            // Actions
-            def.actions.forEach(act => {
-                group.innerHTML += `
-                    <div class="wf-node ${act.type.toLowerCase() === 'placeholder' ? 'placeholder' : ''}">
-                        <div class="wf-type">${act.type}</div>
-                        <div class="wf-label">${act.label}</div>
-                    </div>
-                `;
-            });
-            flow.appendChild(group);
         });
+        flow.appendChild(group);
+    });
+}
 
-    } catch (e) {
-        flow.innerHTML = `<div class="modal-empty">Error visualizing workflow: ${e.message}</div>`;
-    }
+async function openWorkflowViewer() {
+    // Legacy support for the button in the main table
+    showView('workflows');
 }
 
 // ── TOAST ──

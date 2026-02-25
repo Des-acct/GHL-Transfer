@@ -47,7 +47,10 @@
         </div>
         <div class="sb-section">
           <div class="sb-sec-label">GHL Transfer</div>
-          <div class="ni active"><span class="ico">🔄</span><span class="lbl">Data Transfer</span></div>
+          <div class="ni active" id="nav-transfer" onclick="showView('transfer')"><span class="ico">🔄</span><span
+              class="lbl">Data Transfer</span></div>
+          <div class="ni" id="nav-workflows" onclick="showView('workflows')"><span class="ico">📜</span><span
+              class="lbl">Exported Workflows</span></div>
         </div>
         <div class="sb-user">
           <div class="u-av">A</div>
@@ -118,7 +121,7 @@
               onclick="applyGlobal()">APPLY TO ALL</button>
           </div>
 
-          <div class="table-wrap">
+          <div class="table-wrap" id="view-transfer">
             <div class="tw-head">
               <div>
                 <div class="tw-title">Module Transfer Console</div>
@@ -138,6 +141,30 @@
               </thead>
               <tbody id="tableBody"></tbody>
             </table>
+          </div>
+
+          <!-- EXPORTED WORKFLOWS LIST VIEW -->
+          <div id="view-workflows" style="display:none">
+            <div class="table-wrap">
+              <div class="tw-head">
+                <div>
+                  <div class="tw-title">Exported Workflows History</div>
+                  <div class="tw-sub">Historical exports stored in Supabase with visual reconstruction</div>
+                </div>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:300px">Export Ref</th>
+                    <th>Records</th>
+                    <th>Date Exported</th>
+                    <th style="width:180px">Visual Preview</th>
+                    <th style="width:120px">Download</th>
+                  </tr>
+                </thead>
+                <tbody id="workflowListBody"></tbody>
+              </table>
+            </div>
           </div>
 
           <div class="summary">
