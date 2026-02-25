@@ -85,4 +85,22 @@ export async function getManifestFromSupabase(locationId) {
     return manifest;
 }
 
+/**
+ * Get full history of exports for a module.
+ */
+export async function getExportHistory(moduleId, locationId) {
+    if (!supabase) return [];
+    const { data, error } = await supabase
+        .from('ghl_exports')
+        .select('id, description, exported_at, record_count, data')
+        .eq('module_id', moduleId)
+        .eq('location_id', locationId)
+        .order('exported_at', { ascending: false });
+    if (error) {
+        console.error(`   ❌  Supabase history fetch failed for ${moduleId}:`, error.message);
+        throw error;
+    }
+    return data || [];
+}
+
 export { supabase };

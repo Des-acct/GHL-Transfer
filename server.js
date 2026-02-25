@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'fs';
 import config from './src/config.js';
 import { ghlFetch, ghlFetchAll, testConnection } from './src/ghl-client.js';
 import { getSessionRequestCount } from './src/rate-limiter.js';
-import { saveToSupabase, readFromSupabase, getManifestFromSupabase } from './src/supabase.js';
+import { saveToSupabase, readFromSupabase, getManifestFromSupabase, getExportHistory } from './src/supabase.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -310,14 +310,8 @@ app.post('/api/import/:moduleId', async (req, res) => {
 // ── EXPORT LIST ──
 app.get('/api/exports-list/:moduleId', async (req, res) => {
     try {
-        const { data, error } = await supabase
-            .from('ghl_exports')
-            .select('id, description, exported_at, record_count, data')
-            .eq('module_id', req.params.moduleId)
-            .order('exported_at', { ascending: false });
-
-        if (error) throw error;
-        res.json({ success: true, exports: data });
+        const history = await getExportHistory(req.params.moduleId, config.locationId);
+        res.json({ success: true, exports: history });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
